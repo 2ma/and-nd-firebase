@@ -21,39 +21,42 @@ import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v7.app.AppCompatActivity;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
 import android.text.Editable;
 import android.text.InputFilter;
 import android.text.TextWatcher;
 import android.util.Log;
+import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
-import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 
 import com.firebase.ui.auth.AuthUI;
+import com.firebase.ui.database.FirebaseRecyclerAdapter;
+import com.firebase.ui.database.FirebaseRecyclerOptions;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.database.ChildEventListener;
-import com.google.firebase.database.DataSnapshot;
-import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.Query;
 import com.google.firebase.remoteconfig.FirebaseRemoteConfig;
 import com.google.firebase.remoteconfig.FirebaseRemoteConfigSettings;
 import com.google.firebase.storage.FirebaseStorage;
 import com.google.firebase.storage.StorageReference;
 import com.google.firebase.storage.UploadTask;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
@@ -64,8 +67,7 @@ public class MainActivity extends AppCompatActivity {
     public static final int DEFAULT_MSG_LENGTH_LIMIT = 1000;
     private static final String FRIENDLY_MSG_LENGTH_KEY = "friendly_msg_length";
 
-    private ListView mMessageListView;
-    private MessageAdapter mMessageAdapter;
+    private RecyclerView mMessageListView;
     private ProgressBar mProgressBar;
     private ImageButton mPhotoPickerButton;
     private EditText mMessageEditText;
@@ -78,6 +80,7 @@ public class MainActivity extends AppCompatActivity {
     private FirebaseStorage firebaseStorage;
     private StorageReference chatPhotoStorageReference;
     private FirebaseRemoteConfig firebaseRemoteConfig;
+    private FirebaseRecyclerAdapter<FriendlyMessage, MessageViewHolder> adapter;
 
     private String mUsername;
 
@@ -104,10 +107,35 @@ public class MainActivity extends AppCompatActivity {
         mMessageEditText = findViewById(R.id.messageEditText);
         mSendButton = findViewById(R.id.sendButton);
 
+        Query query = firebaseDatabase.getReference().child("messages").limitToLast(50);
+
+        FirebaseRecyclerOptions<FriendlyMessage> options = new FirebaseRecyclerOptions.Builder<FriendlyMessage>()
+            .setQuery(query, FriendlyMessage.class)
+            .build();
+
         // Initialize message ListView and its adapter
-        List<FriendlyMessage> friendlyMessages = new ArrayList<>();
-        mMessageAdapter = new MessageAdapter(this, R.layout.item_message, friendlyMessages);
-        mMessageListView.setAdapter(mMessageAdapter);
+        adapter = new FirebaseRecyclerAdapter<FriendlyMessage, MessageViewHolder>(options) {
+            @Override
+            protected void onBindViewHolder(@NonNull MessageViewHolder holder, int position, @NonNull FriendlyMessage message) {
+                holder.bindData(message);
+            }
+
+            @NonNull
+            @Override
+            public MessageViewHolder onCreateViewHolder(@NonNull ViewGroup viewGroup, int i) {
+                View view = LayoutInflater.from(viewGroup.getContext()).inflate(R.layout.item_message, viewGroup, false);
+                return new MessageViewHolder(view);
+            }
+
+            @Override
+            public void onDataChanged() {
+                mMessageListView.smoothScrollToPosition(adapter.getItemCount() - 1);
+            }
+        };
+        LinearLayoutManager manager = new LinearLayoutManager(this);
+        manager.setStackFromEnd(true);
+        mMessageListView.setLayoutManager(manager);
+        mMessageListView.setAdapter(adapter);
 
         // Initialize progress bar
         mProgressBar.setVisibility(ProgressBar.INVISIBLE);
@@ -185,7 +213,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void attachDatabaseReadListener() {
-        if (childEventListener == null) {
+        adapter.startListening();
+        /*if (childEventListener == null) {
             childEventListener = new ChildEventListener() {
                 @Override
                 public void onChildAdded(@NonNull DataSnapshot dataSnapshot, @Nullable String s) {
@@ -214,20 +243,20 @@ public class MainActivity extends AppCompatActivity {
                 }
             };
             databaseReference.addChildEventListener(childEventListener);
-        }
+        }*/
     }
 
     private void onSignedOutClean() {
         mUsername = ANONYMOUS;
-        mMessageAdapter.clear();
         detachDatabaseListener();
     }
 
     private void detachDatabaseListener() {
-        if (childEventListener != null) {
+        adapter.stopListening();
+        /*if (childEventListener != null) {
             databaseReference.removeEventListener(childEventListener);
             childEventListener = null;
-        }
+        }*/
     }
 
     private void fetchConfig() {
@@ -312,6 +341,5 @@ public class MainActivity extends AppCompatActivity {
         super.onPause();
         firebaseAuth.removeAuthStateListener(authStateListener);
         detachDatabaseListener();
-        mMessageAdapter.clear();
     }
 }
